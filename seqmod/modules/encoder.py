@@ -30,6 +30,27 @@ class BaseEncoder(nn.Module):
         return [], None
 
 
+def CLWrapper(EncoderBaseClass):
+    def __init__(self, *args, **kwargs):
+        EncoderBaseClass.__init__(self, *args, **kwargs)
+        self.margin = 0.5
+
+    def loss(self, s_enc, t_enc, test=False):
+        """Contrastive loss."""
+        E = - torch.mm(s_enc[-1], torch.t(t_enc[-1]))
+        D = torch.diag(E)
+        C_c = torch.clamp(self.margin - E + D, min=0)
+        C_r = torch.clamp(self.margin - E + D.view(-1, 1), min=0)
+        C = C_c + C_r
+        return (C.sum() - torch.diag(C).sum()) / C.size(0) ** 2, None
+
+    return type('CL{}'.format(EncoderBaseClass.__name__),
+                (EncoderBaseClass,),
+                {'__init__': __init__,
+                 'loss': loss,
+                 })
+
+
 def GRLWrapper(EncoderBaseClass):
     def __init__(self, cond_dims, cond_vocabs, *args, **kwargs):
         EncoderBaseClass.__init__(self, *args, **kwargs)

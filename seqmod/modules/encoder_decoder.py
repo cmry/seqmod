@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from seqmod.misc.beam_search import Beam
-from seqmod.modules.encoder import GRLWrapper
+from seqmod.modules.encoder import GRLWrapper, CLWrapper
 from seqmod.modules.rnn_encoder import RNNEncoder
 from seqmod.modules.softmax import SampledSoftmax
 from seqmod.modules.decoder import RNNDecoder
@@ -26,7 +26,8 @@ class EncoderDecoder(nn.Module):
         during training.
     - reverse: bool, whether to run the decoder in reversed order
     """
-    def __init__(self, encoder, decoder, exposure_rate=1., reverse=False):
+    def __init__(self, encoder, decoder, exposure_rate=1., reverse=False,
+                 contrastive=False):
         super(EncoderDecoder, self).__init__()
 
         self.encoder = encoder
@@ -34,6 +35,7 @@ class EncoderDecoder(nn.Module):
 
         self.exposure_rate = exposure_rate
         self.reverse = reverse
+        self.contrastive = contrastive
 
         pad = self.decoder.embeddings.d.get_pad()
         nll_weight = torch.ones(len(self.decoder.embeddings.d))
@@ -139,6 +141,9 @@ class EncoderDecoder(nn.Module):
         (trg, trg_lengths) = trg
 
         num_examples = trg_lengths.data.sum()
+
+        if self.contrastive:  # FIXME: hacky conds overwrite
+            src_conds, _ = self.encoder(trg, lengths=trg_lengths)
 
         # - compute encoder output
         enc_outs, enc_hidden = self.encoder(src, lengths=src_lengths)
@@ -312,6 +317,9 @@ def make_embeddings(src_dict, trg_dict, emb_dim, word_dropout):
     return src_embeddings, trg_embeddings
 
 
+CLRNNEncoder = CLWrapper(RNNEncoder)
+
+
 def make_rnn_encoder_decoder(
         num_layers,
         emb_dim,
@@ -336,7 +344,8 @@ def make_rnn_encoder_decoder(
         add_init_jitter=False,
         cond_dims=None,
         cond_vocabs=None,
-        reverse=False
+        reverse=False,
+        contrastive=False
 ):
     """
     - num_layers: int, Number of layers for both the encoder and the decoder.
@@ -381,7 +390,9 @@ def make_rnn_encoder_decoder(
     if reuse_hidden and enc_layers != dec_layers:
         raise ValueError("`reuse_hidden` requires equal number of layers")
 
-    encoder = RNNEncoder(src_embeddings, hid_dim, enc_layers, cell=cell,
+    enc = CLRNNEncoder if contrastive else RNNEncoder
+
+    encoder = enc(src_embeddings, hid_dim, enc_layers, cell=cell,
                          bidi=bidi, dropout=dropout, summary=encoder_summary,
                          train_init=train_init, add_init_jitter=add_init_jitter)
 
@@ -409,7 +420,8 @@ def make_rnn_encoder_decoder(
                              "summaries, set `encoder_summary` to a different "
                              "value")
 
-    return EncoderDecoder(encoder, decoder, reverse=reverse)
+    return EncoderDecoder(encoder, decoder, reverse=reverse,
+                          contrastive=contrastive)
 
 
 GRLRNNEncoder = GRLWrapper(RNNEncoder)

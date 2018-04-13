@@ -153,7 +153,7 @@ if __name__ == '__main__':
         reuse_hidden=args.att_type.lower() != 'none',
         dropout=args.dropout, input_feed=args.input_feed,
         word_dropout=args.word_dropout, deepout_layers=args.deepout_layers,
-        tie_weights=args.tie_weights, reverse=args.reverse)
+        tie_weights=args.tie_weights, reverse=args.reverse, contrastive=True)
 
     # model.freeze_submodule('encoder')
     # model.encoder.register_backward_hook(u.log_grad)
@@ -174,7 +174,7 @@ if __name__ == '__main__':
 
     early_stopping = EarlyStopping(args.patience)
     trainer = Trainer(
-        model, {'train': train, 'valid': valid}, optimizer, losses=('ppl',),
+        model, {'train': train, 'valid': valid}, optimizer, losses=('ppl', 'cl'),
         early_stopping=early_stopping, max_norm=args.max_norm,
         checkpoint=Checkpoint('EncoderDecoder', mode='nlast', keep=3).setup(args))
     trainer.add_loggers(StdLogger())
